@@ -137,6 +137,13 @@ lora_config = LoraConfig(
 )
 
 model = get_peft_model(model, lora_config)
+
+# Keep trainable adapter weights in FP32. Some Colab/PyTorch stacks create
+# BF16 LoRA gradients, which can crash AMP gradient unscaling.
+for param in model.parameters():
+    if param.requires_grad:
+        param.data = param.data.to(torch.float32)
+
 model.print_trainable_parameters()
 print("✓ LoRA adapter added")
 
@@ -188,6 +195,7 @@ training_config_kwargs = {
     "optim": "paged_adamw_8bit",
     "logging_steps": 5,
     "save_strategy": "epoch",
+    "max_grad_norm": 0.0,
     "fp16": True,
     "bf16": False,
     "report_to": "none",
