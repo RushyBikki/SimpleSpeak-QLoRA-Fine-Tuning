@@ -235,7 +235,7 @@ pip install --no-deps bitsandbytes
 
 **Fixes** (in order):
 1. Reduce batch size (already set to 1)
-2. Reduce `max_seq_length` (currently 512) to 256
+2. Reduce the max sequence length in `src/train.py` from 512 to 256
 3. Reduce dataset size for testing
 4. Use a different GPU in Colab (Runtime > Change runtime type)
 
@@ -249,7 +249,7 @@ pip install --no-deps bitsandbytes
 ---
 
 ### Issue 5: "TRL Version Incompatibility"
-**Error**: `SFTConfig not found` or similar
+**Error**: `SFTConfig not found`, `unexpected keyword argument 'max_seq_length'`, or similar
 
 **Fix**: The code handles multiple TRL versions automatically. If issues persist:
 ```bash

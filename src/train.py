@@ -7,6 +7,7 @@ The adapter is saved to adapters/qwen-simple-speak and can be used with compare.
 
 import os
 import json
+from inspect import signature
 import torch
 from pathlib import Path
 
@@ -176,30 +177,47 @@ print("✓ Dataset formatted with chat template")
 
 print("\nConfiguring training...")
 
-training_config = SFTConfig(
-    output_dir=OUTPUT_DIR,
-    num_train_epochs=3,
-    per_device_train_batch_size=1,
-    gradient_accumulation_steps=8,
-    learning_rate=2e-4,
-    lr_scheduler_type="linear",
-    optim="paged_adamw_8bit",
-    logging_steps=5,
-    save_strategy="epoch",
-    max_seq_length=512,
-    fp16=True,
-    report_to="none",
-    seed=42,
-)
+training_config_kwargs = {
+    "output_dir": OUTPUT_DIR,
+    "num_train_epochs": 3,
+    "per_device_train_batch_size": 1,
+    "gradient_accumulation_steps": 8,
+    "learning_rate": 2e-4,
+    "lr_scheduler_type": "linear",
+    "optim": "paged_adamw_8bit",
+    "logging_steps": 5,
+    "save_strategy": "epoch",
+    "fp16": True,
+    "report_to": "none",
+    "seed": 42,
+}
+
+# TRL renamed max_seq_length to max_length in newer releases.
+sft_config_params = signature(SFTConfig).parameters
+if "max_length" in sft_config_params:
+    training_config_kwargs["max_length"] = 512
+elif "max_seq_length" in sft_config_params:
+    training_config_kwargs["max_seq_length"] = 512
+else:
+    print("Warning: This TRL version does not expose max_length/max_seq_length.")
+
+training_config = SFTConfig(**training_config_kwargs)
 
 # Initialize trainer
-trainer = SFTTrainer(
-    model=model,
-    train_dataset=dataset,
-    args=training_config,
-    peft_config=lora_config,
-    tokenizer=tokenizer,
-)
+trainer_kwargs = {
+    "model": model,
+    "train_dataset": dataset,
+    "args": training_config,
+}
+
+# Newer TRL uses processing_class; older releases used tokenizer.
+sft_trainer_params = signature(SFTTrainer.__init__).parameters
+if "processing_class" in sft_trainer_params:
+    trainer_kwargs["processing_class"] = tokenizer
+elif "tokenizer" in sft_trainer_params:
+    trainer_kwargs["tokenizer"] = tokenizer
+
+trainer = SFTTrainer(**trainer_kwargs)
 
 print("✓ Training config ready")
 
