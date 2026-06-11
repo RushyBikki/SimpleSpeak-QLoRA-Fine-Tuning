@@ -105,6 +105,7 @@ model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
     quantization_config=bnb_config,
     device_map="auto",
+    torch_dtype=torch.float16,
     trust_remote_code=True,
 )
 
@@ -188,6 +189,7 @@ training_config_kwargs = {
     "logging_steps": 5,
     "save_strategy": "epoch",
     "fp16": True,
+    "bf16": False,
     "report_to": "none",
     "seed": 42,
 }
