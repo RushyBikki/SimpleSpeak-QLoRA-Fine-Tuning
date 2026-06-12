@@ -202,7 +202,10 @@ def format_training_example(example):
         "text": f"User: {user_message}\nAssistant: {assistant_message}{tokenizer.eos_token}"
     }
 
-dataset = dataset.map(format_training_example)
+dataset = dataset.map(
+    format_training_example,
+    remove_columns=[col for col in dataset.column_names if col != "text"],
+)
 print("[OK] Dataset formatted as plain text")
 
 # ============================================================
