@@ -196,7 +196,7 @@ training_config_kwargs = {
     "logging_steps": 5,
     "save_strategy": "epoch",
     "max_grad_norm": 0.0,
-    "fp16": True,
+    "fp16": False,
     "bf16": False,
     "report_to": "none",
     "seed": 42,
