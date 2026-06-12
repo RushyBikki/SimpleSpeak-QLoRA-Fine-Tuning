@@ -147,9 +147,9 @@ if using_4bit:
 print("\nSetting up LoRA adapter...")
 
 lora_config = LoraConfig(
-    r=8,
-    lora_alpha=16,
-    lora_dropout=0.05,
+    r=16,
+    lora_alpha=32,
+    lora_dropout=0.0,
     bias="none",
     task_type="CAUSAL_LM",
     target_modules=["c_attn", "c_proj", "c_fc"],
@@ -216,13 +216,13 @@ print("\nConfiguring training...")
 
 training_config_kwargs = {
     "output_dir": OUTPUT_DIR,
-    "num_train_epochs": 3,
+    "num_train_epochs": 20,
     "per_device_train_batch_size": 1,
-    "gradient_accumulation_steps": 8,
-    "learning_rate": 2e-4,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 5e-4,
     "lr_scheduler_type": "linear",
     "optim": "paged_adamw_8bit" if using_4bit else "adamw_torch",
-    "logging_steps": 5,
+    "logging_steps": 1,
     "save_strategy": "epoch",
     "max_grad_norm": 0.0,
     "fp16": False,
