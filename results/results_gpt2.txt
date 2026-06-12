@@ -1,0 +1,147 @@
+============================================================
+COMPARISON RESULTS
+============================================================
+
+============================================================
+PROMPT 1
+============================================================
+
+Prompt:
+Can you explain binary search?
+
+BASE MODEL OUTPUT:
+Yes, and the same for binary search.
+
+FINE-TUNED MODEL OUTPUT:
+No, I have no idea what binary search is.
+
+============================================================
+PROMPT 2
+============================================================
+
+Prompt:
+Can you explain a database index?
+
+BASE MODEL OUTPUT:
+You can't.
+
+FINE-TUNED MODEL OUTPUT:
+A database index is a collection of records that you can access by querying the database. A database index is a collection of records that are stored in a database. For example, if you have a table with a few thousand records, it's a database index. A database index is a collection of records that are stored in a database. For example, if you have a table with a few thousand records, it's a database index.
+A database index is a collection of records that are stored in a database. For example, if you have a table with a few thousand records, it's
+
+============================================================
+PROMPT 3
+============================================================
+
+Prompt:
+Can you explain object-oriented programming?
+
+BASE MODEL OUTPUT:
+I'm a programmer. I write, test, and use the tools I need to build and test.
+
+FINE-TUNED MODEL OUTPUT:
+I think it's pretty straightforward. The object-oriented programming language is a subset of the language I've been working on for a while. The goal is to write code that's easy to understand and that can be used in many different situations. The object-oriented language allows you to write code that's easy to understand, and that can be used in many different situations. The language is simple to understand, and you can easily write it with just a single command. It's pretty straightforward to learn and you can write it for a very few different languages. The language is very easy to learn and
+
+============================================================
+PROMPT 4
+============================================================
+
+Prompt:
+Can you explain a loss function?
+
+BASE MODEL OUTPUT:
+There's one, and one. I've never heard of one.
+
+FINE-TUNED MODEL OUTPUT:
+Yes. There are many reasons why we need to handle loss. First, we need to make sure we can use the same kind of functions. Second, we need to provide a way to use the same function in different scenarios. Third, we need to make sure we can use the same function in different scenarios.
+Our loss function is the same for all scenarios.
+We can have a loss function for loss of the event.
+Our loss function is the same for all scenarios.
+Our loss function is the same for all scenarios.
+We can have a loss function for loss of the
+
+============================================================
+PROMPT 5
+============================================================
+
+Prompt:
+Can you explain transformers in AI?
+
+BASE MODEL OUTPUT:
+I've never really thought about it. What I know is that you can build a system that can do things like this. You can put a button on the screen, and the buttons that the robot needs to respond to are on the screen. And you can do this all in the same way. It's kind of like a really big data system that you can have. And it's not like you can build a whole system. You have to be able to say "Oh, that's a button on the screen. What do I do with that?" You can be able to say "Oh
+
+FINE-TUNED MODEL OUTPUT:
+Transformers are a type of AI that works with things like a computer to tell a story. They're very hard to understand, but they're very much like real computers, and they're able to tell stories.
+The way they do this, is they let you create an AI that will tell you what you're looking for, and they'll tell you what you need to do.
+So, for example, I want to know where the car is going. I want to know if the car is going to stay on the ground or how fast it's going.
+The idea is to
+
+============================================================
+PROMPT 6
+============================================================
+
+Prompt:
+Can you explain attention in AI?
+
+BASE MODEL OUTPUT:
+I don't know.
+
+FINE-TUNED MODEL OUTPUT:
+No, not at all.
+
+============================================================
+PROMPT 7
+============================================================
+
+Prompt:
+Can you explain embeddings?
+
+BASE MODEL OUTPUT:
+How can you make a video embedding video that is easy to embed?
+
+FINE-TUNED MODEL OUTPUT:
+Well, it's not like you have to put it in the right place. You can just put it in the right place. And you can just use it in your own code. So I think that's a big part of the appeal of this system is that it's easy to understand. You can't just put in a single statement in your code, so you can't just put in a single statement. So I think it's a big part of the appeal of this system is that you can use it in your own code. So it's a big part of the appeal of this system
+
+============================================================
+PROMPT 8
+============================================================
+
+Prompt:
+Can you explain tokens?
+
+BASE MODEL OUTPUT:
+Well, we have to use our own token system, which is not only a good idea but also an asset system, and that's a great idea, but it's not a great idea because it's a bad idea. The idea is that we have to have a system where people have a choice of token, which is not just a token system, but a system where you can exchange your tokens in a way that you can control. There's a way for a company to buy the token and then sell them in a way that is not just a token system, but also a system where you
+
+FINE-TUNED MODEL OUTPUT:
+I don't know what to do with this.
+
+============================================================
+PROMPT 9
+============================================================
+
+Prompt:
+Can you explain cloud computing?
+
+BASE MODEL OUTPUT:
+I am not a cloud computer programmer, but I do know how to set up a cloud computing system. I have been doing this for a long time. I am a software engineer and the goal is to use cloud computing in the future to run our software. I have done this for a long time, and I have had the opportunity to work on a lot of different projects. I do not have a background in cloud computing.
+
+FINE-TUNED MODEL OUTPUT:
+I think it's easy enough to say that cloud computing is a new concept in the world of computing. It's hard to put a price on it, so we're going to have to make a lot of changes.
+We're going to make a lot of changes in the future, and we're going to make a lot of changes in the future. But we're going to make a lot of changes in the future and we're going to make a lot of changes in the future.
+So, for example, if we're going to have a cloud-based business, we're going
+
+============================================================
+PROMPT 10
+============================================================
+
+Prompt:
+Can you explain QLoRA?
+
+BASE MODEL OUTPUT:
+Yes, I can.
+
+FINE-TUNED MODEL OUTPUT:
+I think it's really important to understand the technical aspects of QLoRA. QLoRA is a set of rules and procedures that can be used by a company to implement a certain strategy. We're talking about a business that wants to be successful. It wants to have a good product. And, in order to do that, you have to make sure that there is a good product on the market. If you have a product that's going to be successful, you've got to be able to sell it to the best people. And, in order to do that, you have to be
+
+============================================================
+Comparison complete!
