@@ -1,5 +1,10 @@
-Rewrite this in simpler words: Binary search reduces the search space by repeatedly dividing a sorted list in half.
-Rewrite this in simpler words: A database index improves query performance by allowing faster lookup of records.
-Rewrite this in simpler words: Object-oriented programming organizes code into reusable objects that contain data and behavior.
-Rewrite this in simpler words: A loss function measures how far a model's prediction is from the correct answer.
-Rewrite this in simpler words: Transformers use attention mechanisms to understand relationships between words in a sequence.
+Can you explain binary search?
+Can you explain a database index?
+Can you explain object-oriented programming?
+Can you explain a loss function?
+Can you explain transformers in AI?
+Can you explain attention in AI?
+Can you explain embeddings?
+Can you explain tokens?
+Can you explain cloud computing?
+Can you explain QLoRA?
