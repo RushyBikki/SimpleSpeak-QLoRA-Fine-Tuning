@@ -199,7 +199,7 @@ def format_training_example(example):
             assistant_message = message.get("content", "")
     
     return {
-        "text": f"User: {user_message}\nAssistant: {assistant_message}"
+        "text": f"User: {user_message}\nAssistant: {assistant_message}{tokenizer.eos_token}"
     }
 
 dataset = dataset.map(format_training_example)
@@ -222,7 +222,7 @@ training_config_kwargs = {
     "logging_steps": 5,
     "save_strategy": "epoch",
     "max_grad_norm": 0.0,
-    "fp16": cuda_available,
+    "fp16": False,
     "bf16": False,
     "report_to": "none",
     "seed": 42,
@@ -230,6 +230,9 @@ training_config_kwargs = {
 
 # TRL renamed max_seq_length to max_length in newer releases.
 sft_config_params = signature(SFTConfig).parameters
+if "dataset_text_field" in sft_config_params:
+    training_config_kwargs["dataset_text_field"] = "text"
+
 if "max_length" in sft_config_params:
     training_config_kwargs["max_length"] = 512
 elif "max_seq_length" in sft_config_params:

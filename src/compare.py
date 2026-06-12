@@ -129,6 +129,8 @@ def generate_output(model, tokenizer, user_text):
     # Decode only the newly generated tokens (skip the input prompt)
     generated_ids = output_ids[0][input_ids.shape[-1]:]
     generated_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
+    generated_text = generated_text.split("\nUser:", 1)[0]
+    generated_text = generated_text.split("\nAssistant:", 1)[0]
     
     return generated_text.strip()
 

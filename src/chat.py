@@ -166,6 +166,8 @@ while True:
     # Decode only the newly generated tokens (skip the input prompt)
     generated_ids = output_ids[0][input_ids.shape[-1]:]
     answer_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
+    answer_text = answer_text.split("\nUser:", 1)[0]
+    answer_text = answer_text.split("\nAssistant:", 1)[0]
     
     print(f"{answer_text.strip()}\n")
 
