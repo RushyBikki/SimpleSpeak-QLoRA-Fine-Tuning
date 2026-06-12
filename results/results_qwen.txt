@@ -1,0 +1,139 @@
+============================================================
+PROMPT 1
+============================================================
+
+Prompt:
+Can you explain binary search?
+
+BASE MODEL OUTPUT:
+Sure! Binary search is like finding the best spot to pick a toy from a big box of toys. It's easier than just looking at each toy one by one because it helps find the right spot faster!
+
+FINE-TUNED MODEL OUTPUT:
+Sure! Binary search is like finding the best spot to put a toy in a big box.
+
+============================================================
+PROMPT 2
+============================================================
+
+Prompt:
+Can you explain a database index?
+
+BASE MODEL OUTPUT:
+Sure! A database index is like a special map that helps the computer find information quickly when it's searching for data. It's like having a secret code on your fridge so you can open it faster and find what you need without opening it yourself.
+
+FINE-TUNED MODEL OUTPUT:
+Sure! A database index is like a special map that helps the computer find things quickly when searching for information.
+
+============================================================
+PROMPT 3
+============================================================
+
+Prompt:
+Can you explain object-oriented programming?
+
+BASE MODEL OUTPUT:
+Sure! Object-oriented programming is like when we use special blocks of code called "objects" that can do lots of different things on their own. It's kind of like how you might have a toy car and a toy truck that both can drive around the house or play with toys. The important thing to remember is that each block of code has its own job, just like how each toy has its own special spot inside your toy box.
+
+FINE-TUNED MODEL OUTPUT:
+Sure! Object-oriented programming is when we use objects to do things.
+
+============================================================
+PROMPT 4
+============================================================
+
+Prompt:
+Can you explain a loss function?
+
+BASE MODEL OUTPUT:
+Sure! A loss function is like a special tool that helps computers understand how well they're doing at solving a problem. It's like giving the computer points for each time it solves a good puzzle and taking away points when it makes a mistake. This helps make sure the computer doesn't get too many wrong answers and keeps getting better at solving puzzles.
+
+FINE-TUNED MODEL OUTPUT:
+Sure! A loss function is like a special rule that helps computers figure out how well they're doing.
+
+============================================================
+PROMPT 5
+============================================================
+
+Prompt:
+Can you explain transformers in AI?
+
+BASE MODEL OUTPUT:
+Sure! Imagine we have a special machine called a "transformer." It's like a superpower that can learn and understand new things on its own. This transformer is very good at recognizing patterns and understanding complex information. It's like having a smart friend who knows how to solve puzzles and find hidden clues.
+
+FINE-TUNED MODEL OUTPUT:
+Sure! Imagine the computer is like a robot. It can learn from examples and improve itself.
+
+============================================================
+PROMPT 6
+============================================================
+
+Prompt:
+Can you explain attention in AI?
+
+BASE MODEL OUTPUT:
+Sure! In simple terms, attention is like a special helper that helps the computer understand which parts of information to pay more attention to when it's working on something. It's kind of like how your teacher asks students to focus their minds and listen carefully while they're learning. This helps the computer learn faster and better at what it needs to do.
+
+FINE-TUNED MODEL OUTPUT:
+Sure! Attention is like finding the best spot to look when playing hide-and-seek with toys.
+
+============================================================
+PROMPT 7
+============================================================
+
+Prompt:
+Can you explain embeddings?
+
+BASE MODEL OUTPUT:
+Sure! Imagine we have a big box of toys, and each toy has its own special way of moving around the room. That's kind of like what an embedding is - it's a special way of organizing information so that it can be easily understood and used by computers. It helps us understand how different things relate to each other.
+
+FINE-TUNED MODEL OUTPUT:
+Sure! An embedding is like a special code that helps computers understand what words mean.
+
+============================================================
+PROMPT 8
+============================================================
+
+Prompt:
+Can you explain tokens?
+
+BASE MODEL OUTPUT:
+Sure! Tokens are like special pieces of information that help us understand what's happening in a game or story. They're like the building blocks of the game, and they can be used to make new things happen.
+
+FINE-TUNED MODEL OUTPUT:
+Can you tell me about tokens?
+
+============================================================
+PROMPT 9
+============================================================
+
+Prompt:
+Can you explain cloud computing?
+
+BASE MODEL OUTPUT:
+Sure! Let's talk about it like we're explaining the basics of a big puzzle.
+
+Imagine you have a box full of toys. Now, let's say that instead of just having one toy per box, we can put many different types of toys inside each box. This is kind of what cloud computing does!
+
+Think of it as a magical room where computers and other devices can work together to share their resources (like paper or crayons) without needing physical space. It's like having a giant playground with lots of kids playing together, but using special machines to keep everything running smoothly.
+
+So,
+
+FINE-TUNED MODEL OUTPUT:
+Sure! Imagine having a big box of toys that can be shared with other kids.
+
+============================================================
+PROMPT 10
+============================================================
+
+Prompt:
+Can you explain QLoRA?
+
+BASE MODEL OUTPUT:
+Sure! QLoRA is like a special way of looking at data that helps us understand how to improve our predictions about what will happen next. It's like having a superpower that lets us see the future better than we ever could before.
+
+FINE-TUNED MODEL OUTPUT:
+Can you tell me about QLoRA?
+
+============================================================
+Comparison complete!
+============================================================
