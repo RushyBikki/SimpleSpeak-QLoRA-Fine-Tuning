@@ -1,8 +1,9 @@
 """
-QLoRA fine-tuning script for Qwen2.5-0.5B-Instruct on simple-speak task.
+LoRA fine-tuning script for GPT-2 on simple-speak task.
 
-This script trains a LoRA adapter to rewrite technical text in simpler words.
-The adapter is saved to adapters/qwen-simple-speak and can be used with compare.py or chat.py.
+This script trains a LoRA adapter to explain technical concepts in simpler words
+suitable for 12-13 year old students. The adapter is saved to adapters/gpt2-simple-speak
+and can be used with compare.py or chat.py.
 """
 
 import os
@@ -25,9 +26,9 @@ from trl import SFTTrainer, SFTConfig
 # CONFIGURATION
 # ============================================================
 
-MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+MODEL_NAME = "openai-community/gpt2"
 TRAIN_FILE = "data/train.jsonl"
-ADAPTER_DIR = "adapters/qwen-simple-speak"
+ADAPTER_DIR = "adapters/gpt2-simple-speak"
 OUTPUT_DIR = "results/training_output"
 
 # Disable Weights & Biases reporting
@@ -41,7 +42,7 @@ torch.manual_seed(42)
 # ============================================================
 
 print("=" * 60)
-print("SimpleSpeak QLoRA Training Script")
+print("SimpleSpeak GPT-2 LoRA Training Script")
 print("=" * 60)
 
 # Create necessary directories
@@ -55,20 +56,15 @@ if not Path(TRAIN_FILE).exists():
         "Please ensure data/train.jsonl exists with training examples."
     )
 
-print(f"✓ Training data found: {TRAIN_FILE}")
+print(f"[OK] Training data found: {TRAIN_FILE}")
 
-# Check for CUDA/GPU
-if not torch.cuda.is_available():
-    print("\n" + "!" * 60)
-    print("ERROR: CUDA/GPU was not found.")
-    print("=" * 60)
-    print("This QLoRA training script is intended to run in Google Colab with GPU enabled.")
-    print("\nIn Colab, go to: Runtime > Change runtime type > GPU")
-    print("=" * 60 + "\n")
-    exit(1)
-
-print(f"✓ CUDA available. Device: {torch.cuda.get_device_name(0)}")
-print(f"  GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
+# Check for CUDA/GPU (optional for GPT-2)
+cuda_available = torch.cuda.is_available()
+if cuda_available:
+    print(f"[OK] CUDA available. Device: {torch.cuda.get_device_name(0)}")
+    print(f"  GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
+else:
+    print("[WARN] CUDA not available. Will use CPU (training will be slower).")
 
 # ============================================================
 # LOAD TOKENIZER
@@ -80,46 +76,69 @@ tokenizer = AutoTokenizer.from_pretrained(
     trust_remote_code=True,
 )
 
-# Ensure tokenizer has a pad token
+# Ensure tokenizer has a pad token (GPT-2 doesn't have one by default)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
 # Set padding side to "right"
 tokenizer.padding_side = "right"
-print("✓ Tokenizer loaded")
+print("[OK] Tokenizer loaded")
 
 # ============================================================
-# LOAD MODEL WITH 4-BIT QUANTIZATION
+# LOAD MODEL WITH 4-BIT QUANTIZATION (if available)
 # ============================================================
 
-print("\nLoading base model in 4-bit...")
+print("\nLoading base model...")
+model = None
+using_4bit = False
 
-bnb_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype=torch.float16,
-    bnb_4bit_use_double_quant=True,
-)
+# Try 4-bit quantization if CUDA is available
+if cuda_available:
+    try:
+        print("Attempting 4-bit quantization...")
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+        )
+        
+        model = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME,
+            quantization_config=bnb_config,
+            device_map="auto",
+            torch_dtype=torch.float16,
+            trust_remote_code=True,
+        )
+        using_4bit = True
+        print("[OK] Model loaded in 4-bit")
+    except Exception as e:
+        print(f"[WARN] 4-bit loading failed: {e}")
+        print("Falling back to normal LoRA loading...")
+        model = None
 
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_NAME,
-    quantization_config=bnb_config,
-    device_map="auto",
-    torch_dtype=torch.float16,
-    trust_remote_code=True,
-)
+# Fall back to normal loading if 4-bit failed or no CUDA
+if model is None:
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME,
+        torch_dtype=torch.float32 if not cuda_available else torch.float16,
+        device_map="auto" if cuda_available else "cpu",
+        trust_remote_code=True,
+    )
+    print("[OK] Model loaded (normal LoRA)")
 
 # Disable cache for training
 model.config.use_cache = False
-print("✓ Model loaded in 4-bit")
+model.config.pad_token_id = tokenizer.eos_token_id
 
 # ============================================================
-# PREPARE FOR KBIT TRAINING
+# PREPARE FOR KBIT TRAINING (if using 4-bit)
 # ============================================================
 
-print("\nPreparing model for k-bit training...")
-model = prepare_model_for_kbit_training(model)
-print("✓ Model prepared for k-bit training")
+if using_4bit:
+    print("\nPreparing model for k-bit training...")
+    model = prepare_model_for_kbit_training(model)
+    print("[OK] Model prepared for k-bit training")
 
 # ============================================================
 # ADD LORA ADAPTER
@@ -133,19 +152,20 @@ lora_config = LoraConfig(
     lora_dropout=0.05,
     bias="none",
     task_type="CAUSAL_LM",
-    target_modules="all-linear",
+    target_modules=["c_attn", "c_proj", "c_fc"],
+    fan_in_fan_out=True,
 )
 
 model = get_peft_model(model, lora_config)
 
-# Keep trainable adapter weights in FP32. Some Colab/PyTorch stacks create
-# BF16 LoRA gradients, which can crash AMP gradient unscaling.
-for param in model.parameters():
-    if param.requires_grad:
-        param.data = param.data.to(torch.float32)
+# Keep trainable adapter weights in FP32 (for 4-bit training stability)
+if using_4bit:
+    for param in model.parameters():
+        if param.requires_grad:
+            param.data = param.data.to(torch.float32)
 
 model.print_trainable_parameters()
-print("✓ LoRA adapter added")
+print("[OK] LoRA adapter added")
 
 # ============================================================
 # LOAD AND PREPROCESS DATASET
@@ -163,21 +183,27 @@ if "messages" not in dataset.column_names:
         f'{{"messages":[{{"role":"user","content":"..."}},{{"role":"assistant","content":"..."}}]}}'
     )
 
-print(f"✓ Dataset loaded: {len(dataset)} examples")
+print(f"[OK] Dataset loaded: {len(dataset)} examples")
 
-# Convert messages to text using chat template
-def format_chat_template(example):
-    """Convert messages to text using Qwen's chat template."""
+# Convert messages to plain text (no chat template for GPT-2)
+def format_training_example(example):
+    """Convert messages to plain text format for GPT-2."""
+    messages = example["messages"]
+    user_message = ""
+    assistant_message = ""
+    
+    for message in messages:
+        if message.get("role") == "user":
+            user_message = message.get("content", "")
+        elif message.get("role") == "assistant":
+            assistant_message = message.get("content", "")
+    
     return {
-        "text": tokenizer.apply_chat_template(
-            example["messages"],
-            tokenize=False,
-            add_generation_prompt=False,
-        )
+        "text": f"User: {user_message}\nAssistant: {assistant_message}"
     }
 
-dataset = dataset.map(format_chat_template)
-print("✓ Dataset formatted with chat template")
+dataset = dataset.map(format_training_example)
+print("[OK] Dataset formatted as plain text")
 
 # ============================================================
 # TRAINING CONFIGURATION
@@ -192,11 +218,11 @@ training_config_kwargs = {
     "gradient_accumulation_steps": 8,
     "learning_rate": 2e-4,
     "lr_scheduler_type": "linear",
-    "optim": "paged_adamw_8bit",
+    "optim": "paged_adamw_8bit" if using_4bit else "adamw_torch",
     "logging_steps": 5,
     "save_strategy": "epoch",
     "max_grad_norm": 0.0,
-    "fp16": False,
+    "fp16": cuda_available,
     "bf16": False,
     "report_to": "none",
     "seed": 42,
@@ -241,7 +267,7 @@ print("-" * 60)
 trainer.train()
 
 print("-" * 60)
-print("✓ Training complete")
+print("[OK] Training complete")
 
 # ============================================================
 # SAVE ADAPTER
@@ -255,8 +281,8 @@ model.save_pretrained(ADAPTER_DIR)
 # Save tokenizer to adapter folder
 tokenizer.save_pretrained(ADAPTER_DIR)
 
-print(f"✓ Adapter saved to: {ADAPTER_DIR}")
-print(f"✓ Tokenizer saved to: {ADAPTER_DIR}")
+print(f"[OK] Adapter saved to: {ADAPTER_DIR}")
+print(f"[OK] Tokenizer saved to: {ADAPTER_DIR}")
 
 # ============================================================
 # FINAL MESSAGE

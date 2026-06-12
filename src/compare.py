@@ -2,8 +2,8 @@
 Comparison script: base model vs. fine-tuned adapter.
 
 Loads prompts from data/test_prompts.txt, generates outputs from both
-the base Qwen2.5-0.5B-Instruct and the fine-tuned adapter, then saves
-results to results/results.json for comparison.
+the base GPT-2 and the fine-tuned adapter, then saves results to
+results/results.json for comparison.
 """
 
 import os
@@ -19,9 +19,9 @@ from peft import PeftModel
 # CONFIGURATION
 # ============================================================
 
-MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+MODEL_NAME = "openai-community/gpt2"
 TEST_PROMPTS_FILE = "data/test_prompts.txt"
-ADAPTER_DIR = "adapters/qwen-simple-speak"
+ADAPTER_DIR = "adapters/gpt2-simple-speak"
 RESULTS_FILE = "results/results.json"
 
 # ============================================================
@@ -42,7 +42,7 @@ if not Path(TEST_PROMPTS_FILE).exists():
         "Please ensure data/test_prompts.txt exists with test prompts (one per line)."
     )
 
-print(f"✓ Test prompts file found: {TEST_PROMPTS_FILE}")
+print(f"[OK] Test prompts file found: {TEST_PROMPTS_FILE}")
 
 # Check if adapter exists
 if not Path(ADAPTER_DIR).exists():
@@ -54,14 +54,14 @@ if not Path(ADAPTER_DIR).exists():
     print("=" * 60 + "\n")
     exit(1)
 
-print(f"✓ Adapter found: {ADAPTER_DIR}")
+print(f"[OK] Adapter found: {ADAPTER_DIR}")
 
 # Check for CUDA
 cuda_available = torch.cuda.is_available()
 if cuda_available:
-    print(f"✓ CUDA available. Device: {torch.cuda.get_device_name(0)}")
+    print(f"[OK] CUDA available. Device: {torch.cuda.get_device_name(0)}")
 else:
-    print("⚠ CUDA not available. Using CPU (inference will be slower).")
+    print("[WARN] CUDA not available. Using CPU (inference will be slower).")
 
 # ============================================================
 # LOAD TEST PROMPTS
@@ -71,7 +71,7 @@ print("\nLoading test prompts...")
 with open(TEST_PROMPTS_FILE, "r") as f:
     prompts = [line.strip() for line in f if line.strip()]
 
-print(f"✓ Loaded {len(prompts)} test prompts")
+print(f"[OK] Loaded {len(prompts)} test prompts")
 
 # ============================================================
 # HELPER FUNCTIONS
@@ -88,6 +88,10 @@ def load_tokenizer():
     tokenizer.padding_side = "right"
     return tokenizer
 
+def format_prompt(user_text):
+    """Format prompt for GPT-2 (no chat template)."""
+    return f"User: {user_text}\nAssistant:"
+
 def generate_output(model, tokenizer, user_text):
     """
     Generate simplified output from model.
@@ -100,19 +104,11 @@ def generate_output(model, tokenizer, user_text):
     Returns:
         The generated simplified text (without the input prompt)
     """
-    # Prepare the message in chat format
-    messages = [
-        {"role": "user", "content": f"Rewrite this in simpler words: {user_text}"}
-    ]
+    # Format prompt for GPT-2
+    prompt = format_prompt(user_text)
     
-    # Apply chat template and tokenize
-    input_text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-    
-    inputs = tokenizer(input_text, return_tensors="pt")
+    # Tokenize
+    inputs = tokenizer(prompt, return_tensors="pt")
     input_ids = inputs["input_ids"].to(model.device)
     attention_mask = inputs.get("attention_mask", None)
     if attention_mask is not None:
@@ -124,7 +120,7 @@ def generate_output(model, tokenizer, user_text):
             input_ids,
             attention_mask=attention_mask,
             max_new_tokens=120,
-            temperature=0.3,
+            temperature=0.7,
             top_p=0.9,
             do_sample=True,
             pad_token_id=tokenizer.eos_token_id,
@@ -142,7 +138,7 @@ def generate_output(model, tokenizer, user_text):
 
 print("\nLoading tokenizer...")
 tokenizer = load_tokenizer()
-print("✓ Tokenizer loaded")
+print("[OK] Tokenizer loaded")
 
 # ============================================================
 # STEP A: GENERATE BASE MODEL OUTPUTS
@@ -153,18 +149,27 @@ print("STEP 1: Base Model Inference")
 print("-" * 60)
 
 if cuda_available:
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_use_double_quant=True,
-    )
-    base_model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME,
-        quantization_config=bnb_config,
-        device_map="auto",
-        trust_remote_code=True,
-    )
+    try:
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+        )
+        base_model = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME,
+            quantization_config=bnb_config,
+            device_map="auto",
+            trust_remote_code=True,
+        )
+    except Exception as e:
+        print(f"[WARN] 4-bit loading failed, using normal loading: {e}")
+        base_model = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME,
+            torch_dtype=torch.float16,
+            device_map="auto",
+            trust_remote_code=True,
+        )
 else:
     # CPU loading without quantization
     base_model = AutoModelForCausalLM.from_pretrained(
@@ -174,7 +179,7 @@ else:
         trust_remote_code=True,
     )
 
-print("✓ Base model loaded")
+print("[OK] Base model loaded")
 
 base_outputs = []
 for i, prompt in enumerate(prompts, 1):
@@ -182,13 +187,13 @@ for i, prompt in enumerate(prompts, 1):
     base_outputs.append(output)
     print(f"  [{i}/{len(prompts)}] Generated base output")
 
-print("✓ Base model inference complete")
+print("[OK] Base model inference complete")
 
 # Clean up
 del base_model
 if cuda_available:
     torch.cuda.empty_cache()
-print("✓ Base model cleared from memory")
+print("[OK] Base model cleared from memory")
 
 # ============================================================
 # STEP B: GENERATE FINE-TUNED MODEL OUTPUTS
@@ -199,18 +204,27 @@ print("STEP 2: Fine-tuned Adapter Inference")
 print("-" * 60)
 
 if cuda_available:
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_use_double_quant=True,
-    )
-    base_model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME,
-        quantization_config=bnb_config,
-        device_map="auto",
-        trust_remote_code=True,
-    )
+    try:
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+        )
+        base_model = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME,
+            quantization_config=bnb_config,
+            device_map="auto",
+            trust_remote_code=True,
+        )
+    except Exception as e:
+        print(f"[WARN] 4-bit loading failed, using normal loading: {e}")
+        base_model = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME,
+            torch_dtype=torch.float16,
+            device_map="auto",
+            trust_remote_code=True,
+        )
 else:
     base_model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
@@ -223,7 +237,7 @@ else:
 model = PeftModel.from_pretrained(base_model, ADAPTER_DIR)
 model.eval()  # Set to evaluation mode
 
-print("✓ Base model + adapter loaded")
+print("[OK] Base model + adapter loaded")
 
 fine_tuned_outputs = []
 for i, prompt in enumerate(prompts, 1):
@@ -231,7 +245,7 @@ for i, prompt in enumerate(prompts, 1):
     fine_tuned_outputs.append(output)
     print(f"  [{i}/{len(prompts)}] Generated fine-tuned output")
 
-print("✓ Fine-tuned model inference complete")
+print("[OK] Fine-tuned model inference complete")
 
 # ============================================================
 # STEP C: COMBINE AND SAVE RESULTS
@@ -255,7 +269,7 @@ for prompt, base_output, fine_tuned_output in zip(
 with open(RESULTS_FILE, "w") as f:
     json.dump(results, f, indent=2)
 
-print(f"✓ Results saved to: {RESULTS_FILE}")
+print(f"[OK] Results saved to: {RESULTS_FILE}")
 
 # ============================================================
 # PRINT RESULTS TO TERMINAL

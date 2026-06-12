@@ -1,8 +1,8 @@
 """
-Interactive chat interface for the fine-tuned SimpleSpeak model.
+Interactive chat interface for the fine-tuned GPT-2 LoRA adapter.
 
-Loads the QLoRA adapter and provides a command-line interface to
-simplify technical or complicated text in real-time.
+Loads the LoRA adapter and provides a command-line interface to
+explain concepts in simple language for young students.
 """
 
 import os
@@ -17,15 +17,15 @@ from peft import PeftModel
 # CONFIGURATION
 # ============================================================
 
-MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
-ADAPTER_DIR = "adapters/qwen-simple-speak"
+MODEL_NAME = "openai-community/gpt2"
+ADAPTER_DIR = "adapters/gpt2-simple-speak"
 
 # ============================================================
 # SETUP AND VALIDATION
 # ============================================================
 
 print("=" * 60)
-print("SimpleSpeak QLoRA Chat")
+print("SimpleSpeak GPT-2 LoRA Chat")
 print("=" * 60)
 
 # Check if adapter exists
@@ -38,14 +38,14 @@ if not Path(ADAPTER_DIR).exists():
     print("=" * 60 + "\n")
     exit(1)
 
-print(f"✓ Adapter found: {ADAPTER_DIR}\n")
+print(f"[OK] Adapter found: {ADAPTER_DIR}\n")
 
 # Check for CUDA
 cuda_available = torch.cuda.is_available()
 if cuda_available:
-    print(f"✓ CUDA available. Device: {torch.cuda.get_device_name(0)}")
+    print(f"[OK] CUDA available. Device: {torch.cuda.get_device_name(0)}")
 else:
-    print("⚠ CUDA not available. Using CPU (inference will be slower).")
+    print("[WARN] CUDA not available. Using CPU (inference will be slower).")
 
 # ============================================================
 # LOAD TOKENIZER
@@ -61,7 +61,15 @@ if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
 tokenizer.padding_side = "right"
-print("✓ Tokenizer loaded")
+print("[OK] Tokenizer loaded")
+
+# ============================================================
+# FORMAT FUNCTION FOR GPT-2
+# ============================================================
+
+def format_prompt(user_text):
+    """Format prompt for GPT-2 (no chat template)."""
+    return f"User: {user_text}\nAssistant:"
 
 # ============================================================
 # LOAD BASE MODEL AND ADAPTER
@@ -70,22 +78,31 @@ print("✓ Tokenizer loaded")
 print("\nLoading model and adapter...")
 
 if cuda_available:
-    # 4-bit quantization for GPU
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_use_double_quant=True,
-    )
-    base_model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME,
-        quantization_config=bnb_config,
-        device_map="auto",
-        trust_remote_code=True,
-    )
+    # Try 4-bit quantization for GPU
+    try:
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+        )
+        base_model = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME,
+            quantization_config=bnb_config,
+            device_map="auto",
+            trust_remote_code=True,
+        )
+    except Exception as e:
+        print(f"[WARN] 4-bit loading failed, using normal loading: {e}")
+        base_model = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME,
+            torch_dtype=torch.float16,
+            device_map="auto",
+            trust_remote_code=True,
+        )
 else:
     # CPU loading without quantization
-    print("⚠ Loading on CPU without quantization (may be slow and use more memory)...")
+    print("[WARN] Loading on CPU without quantization (may be slow and use more memory)...")
     base_model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
         torch_dtype=torch.float32,
@@ -97,7 +114,7 @@ else:
 model = PeftModel.from_pretrained(base_model, ADAPTER_DIR)
 model.eval()  # Set to evaluation mode
 
-print("✓ Model and adapter loaded")
+print("[OK] Model and adapter loaded")
 
 # ============================================================
 # CHAT LOOP
@@ -106,12 +123,12 @@ print("✓ Model and adapter loaded")
 print("\n" + "=" * 60)
 print("Ready for chat!")
 print("=" * 60)
-print("Type text to simplify.")
+print("Type a question or concept to explain.")
 print("Type 'quit', 'exit', or 'q' to stop.\n")
 
 while True:
     # Get user input
-    user_input = input("Enter text to simplify:\n> ").strip()
+    user_input = input("Enter your question:\n> ").strip()
     
     # Check for exit commands
     if user_input.lower() in ["quit", "exit", "q"]:
@@ -120,38 +137,27 @@ while True:
     
     # Skip empty input
     if not user_input:
-        print("Please enter some text.\n")
+        print("Please enter a question.\n")
         continue
     
-    # Prepare the prompt with the task instruction
-    prompt = f"Rewrite this in simpler words: {user_input}"
+    # Format prompt for GPT-2
+    prompt = format_prompt(user_input)
     
-    # Create message in chat format
-    messages = [
-        {"role": "user", "content": prompt}
-    ]
-    
-    # Apply chat template and tokenize
-    input_text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-    
-    inputs = tokenizer(input_text, return_tensors="pt")
+    # Tokenize
+    inputs = tokenizer(prompt, return_tensors="pt")
     input_ids = inputs["input_ids"].to(model.device)
     attention_mask = inputs.get("attention_mask", None)
     if attention_mask is not None:
         attention_mask = attention_mask.to(model.device)
     
     # Generate output
-    print("\nSimplified answer:")
+    print("\nAnswer:")
     with torch.no_grad():
         output_ids = model.generate(
             input_ids,
             attention_mask=attention_mask,
             max_new_tokens=150,
-            temperature=0.3,
+            temperature=0.7,
             top_p=0.9,
             do_sample=True,
             pad_token_id=tokenizer.eos_token_id,
@@ -159,8 +165,8 @@ while True:
     
     # Decode only the newly generated tokens (skip the input prompt)
     generated_ids = output_ids[0][input_ids.shape[-1]:]
-    simplified_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
+    answer_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
     
-    print(f"{simplified_text.strip()}\n")
+    print(f"{answer_text.strip()}\n")
 
 print("=" * 60 + "\n")
