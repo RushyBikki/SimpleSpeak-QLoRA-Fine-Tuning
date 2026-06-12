@@ -30,6 +30,7 @@ MODEL_NAME = "openai-community/gpt2"
 TRAIN_FILE = "data/train.jsonl"
 ADAPTER_DIR = "adapters/gpt2-simple-speak"
 OUTPUT_DIR = "results/training_output"
+USE_4BIT = False
 
 # Disable Weights & Biases reporting
 os.environ["WANDB_DISABLED"] = "true"
@@ -92,8 +93,9 @@ print("\nLoading base model...")
 model = None
 using_4bit = False
 
-# Try 4-bit quantization if CUDA is available
-if cuda_available:
+# Try 4-bit quantization if CUDA is available. GPT-2 is small, so this is off
+# by default to keep training and evaluation behavior cleaner.
+if cuda_available and USE_4BIT:
     try:
         print("Attempting 4-bit quantization...")
         bnb_config = BitsAndBytesConfig(
@@ -199,7 +201,11 @@ def format_training_example(example):
             assistant_message = message.get("content", "")
     
     return {
-        "text": f"User: {user_message}\nAssistant: {assistant_message}{tokenizer.eos_token}"
+        "text": (
+            "Task: Explain the concept in simple language.\n"
+            f"Question: {user_message}\n"
+            f"Answer: {assistant_message}{tokenizer.eos_token}"
+        )
     }
 
 dataset = dataset.map(

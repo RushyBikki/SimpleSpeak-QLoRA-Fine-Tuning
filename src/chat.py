@@ -19,6 +19,7 @@ from peft import PeftModel
 
 MODEL_NAME = "openai-community/gpt2"
 ADAPTER_DIR = "adapters/gpt2-simple-speak"
+USE_4BIT = False
 
 # ============================================================
 # SETUP AND VALIDATION
@@ -69,7 +70,11 @@ print("[OK] Tokenizer loaded")
 
 def format_prompt(user_text):
     """Format prompt for GPT-2 (no chat template)."""
-    return f"User: {user_text}\nAssistant:"
+    return (
+        "Task: Explain the concept in simple language.\n"
+        f"Question: {user_text}\n"
+        "Answer:"
+    )
 
 # ============================================================
 # LOAD BASE MODEL AND ADAPTER
@@ -77,7 +82,7 @@ def format_prompt(user_text):
 
 print("\nLoading model and adapter...")
 
-if cuda_available:
+if cuda_available and USE_4BIT:
     # Try 4-bit quantization for GPU
     try:
         bnb_config = BitsAndBytesConfig(
@@ -101,14 +106,14 @@ if cuda_available:
             trust_remote_code=True,
         )
 else:
-    # CPU loading without quantization
-    print("[WARN] Loading on CPU without quantization (may be slow and use more memory)...")
+    print("[OK] Loading GPT-2 without quantization...")
     base_model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
-        torch_dtype=torch.float32,
-        device_map="cpu",
+        torch_dtype=torch.float16 if cuda_available else torch.float32,
+        device_map="auto" if cuda_available else "cpu",
         trust_remote_code=True,
     )
+base_model.config.pad_token_id = tokenizer.eos_token_id
 
 # Load the LoRA adapter
 model = PeftModel.from_pretrained(base_model, ADAPTER_DIR)
@@ -156,16 +161,19 @@ while True:
         output_ids = model.generate(
             input_ids,
             attention_mask=attention_mask,
-            max_new_tokens=150,
+            max_new_tokens=90,
             do_sample=False,
+            repetition_penalty=1.15,
+            no_repeat_ngram_size=3,
+            eos_token_id=tokenizer.eos_token_id,
             pad_token_id=tokenizer.eos_token_id,
         )
     
     # Decode only the newly generated tokens (skip the input prompt)
     generated_ids = output_ids[0][input_ids.shape[-1]:]
     answer_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
-    answer_text = answer_text.split("\nUser:", 1)[0]
-    answer_text = answer_text.split("\nAssistant:", 1)[0]
+    answer_text = answer_text.split("\nQuestion:", 1)[0]
+    answer_text = answer_text.split("\nAnswer:", 1)[0]
     
     print(f"{answer_text.strip()}\n")
 

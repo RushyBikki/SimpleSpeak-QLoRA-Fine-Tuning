@@ -23,6 +23,7 @@ MODEL_NAME = "openai-community/gpt2"
 TEST_PROMPTS_FILE = "data/test_prompts.txt"
 ADAPTER_DIR = "adapters/gpt2-simple-speak"
 RESULTS_FILE = "results/results.json"
+USE_4BIT = False
 
 # ============================================================
 # SETUP AND VALIDATION
@@ -90,7 +91,11 @@ def load_tokenizer():
 
 def format_prompt(user_text):
     """Format prompt for GPT-2 (no chat template)."""
-    return f"User: {user_text}\nAssistant:"
+    return (
+        "Task: Explain the concept in simple language.\n"
+        f"Question: {user_text}\n"
+        "Answer:"
+    )
 
 def generate_output(model, tokenizer, user_text):
     """
@@ -119,16 +124,19 @@ def generate_output(model, tokenizer, user_text):
         output_ids = model.generate(
             input_ids,
             attention_mask=attention_mask,
-            max_new_tokens=120,
+            max_new_tokens=90,
             do_sample=False,
+            repetition_penalty=1.15,
+            no_repeat_ngram_size=3,
+            eos_token_id=tokenizer.eos_token_id,
             pad_token_id=tokenizer.eos_token_id,
         )
     
     # Decode only the newly generated tokens (skip the input prompt)
     generated_ids = output_ids[0][input_ids.shape[-1]:]
     generated_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
-    generated_text = generated_text.split("\nUser:", 1)[0]
-    generated_text = generated_text.split("\nAssistant:", 1)[0]
+    generated_text = generated_text.split("\nQuestion:", 1)[0]
+    generated_text = generated_text.split("\nAnswer:", 1)[0]
     
     return generated_text.strip()
 
@@ -148,7 +156,7 @@ print("\n" + "-" * 60)
 print("STEP 1: Base Model Inference")
 print("-" * 60)
 
-if cuda_available:
+if cuda_available and USE_4BIT:
     try:
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -171,13 +179,13 @@ if cuda_available:
             trust_remote_code=True,
         )
 else:
-    # CPU loading without quantization
     base_model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
-        torch_dtype=torch.float32,
-        device_map="cpu",
+        torch_dtype=torch.float16 if cuda_available else torch.float32,
+        device_map="auto" if cuda_available else "cpu",
         trust_remote_code=True,
     )
+base_model.config.pad_token_id = tokenizer.eos_token_id
 
 print("[OK] Base model loaded")
 
@@ -191,7 +199,7 @@ print("[OK] Base model inference complete")
 
 # Clean up
 del base_model
-if cuda_available:
+if cuda_available and USE_4BIT:
     torch.cuda.empty_cache()
 print("[OK] Base model cleared from memory")
 
@@ -228,10 +236,11 @@ if cuda_available:
 else:
     base_model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
-        torch_dtype=torch.float32,
-        device_map="cpu",
+        torch_dtype=torch.float16 if cuda_available else torch.float32,
+        device_map="auto" if cuda_available else "cpu",
         trust_remote_code=True,
     )
+base_model.config.pad_token_id = tokenizer.eos_token_id
 
 # Load the LoRA adapter
 model = PeftModel.from_pretrained(base_model, ADAPTER_DIR)
