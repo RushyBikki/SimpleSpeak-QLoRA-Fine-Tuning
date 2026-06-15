@@ -63,7 +63,9 @@ def build_training_args():
         "learning_rate": 2e-4,
         "logging_steps": 5,
         "save_strategy": "epoch",
-        "fp16": True,
+        "max_grad_norm": 0.0,
+        "fp16": False,
+        "bf16": False,
         "report_to": "none",
         "optim": "paged_adamw_8bit",
     }
@@ -151,6 +153,9 @@ lora_config = LoraConfig(
     task_type="CAUSAL_LM",
 )
 model = get_peft_model(model, lora_config)
+for param in model.parameters():
+    if param.requires_grad:
+        param.data = param.data.to(torch.float32)
 if hasattr(model, "print_trainable_parameters"):
     model.print_trainable_parameters()
 print("[OK] LoRA adapter added")
