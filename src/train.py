@@ -1,310 +1,212 @@
 """
-LoRA fine-tuning script for GPT-2 on simple-speak task.
+QLoRA fine-tuning script for Qwen3 1.7B on SimpleSpeak.
 
-This script trains a LoRA adapter to explain technical concepts in simpler words
-suitable for 12-13 year old students. The adapter is saved to adapters/gpt2-simple-speak
-and can be used with compare.py or chat.py.
+The script trains a small LoRA adapter so Qwen/Qwen3-1.7B explains
+Computer Science concepts in simple language for 12-13 year old students.
 """
 
 import os
-import json
+import sys
 from inspect import signature
-import torch
 from pathlib import Path
 
-# Hugging Face imports
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    BitsAndBytesConfig,
-)
+import torch
 from datasets import load_dataset
-from peft import LoraConfig, prepare_model_for_kbit_training, get_peft_model
-from trl import SFTTrainer, SFTConfig
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+    TrainingArguments,
+)
+from trl import SFTTrainer
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
+try:
+    from trl import SFTConfig
+except ImportError:
+    SFTConfig = None
 
-MODEL_NAME = "openai-community/gpt2"
+
+MODEL_NAME = "Qwen/Qwen3-1.7B"
 TRAIN_FILE = "data/train.jsonl"
-ADAPTER_DIR = "adapters/gpt2-simple-speak"
-OUTPUT_DIR = "results/training_output"
-USE_4BIT = False
+ADAPTER_DIR = "adapters/qwen3-1.7b-simple-speak"
+TRAINING_OUTPUT_DIR = "results/training_output"
 
-# Disable Weights & Biases reporting
 os.environ["WANDB_DISABLED"] = "true"
-
-# Set random seed for reproducibility
 torch.manual_seed(42)
 
-# ============================================================
-# SETUP AND VALIDATION
-# ============================================================
+
+def apply_qwen_chat_template(tokenizer, messages, add_generation_prompt):
+    """Apply Qwen chat template, disabling thinking mode when supported."""
+    try:
+        return tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+            enable_thinking=False,
+        )
+    except TypeError:
+        return tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+        )
+
+
+def build_training_args():
+    """Create SFT training arguments while tolerating TRL version differences."""
+    config_kwargs = {
+        "output_dir": TRAINING_OUTPUT_DIR,
+        "num_train_epochs": 3,
+        "per_device_train_batch_size": 1,
+        "gradient_accumulation_steps": 8,
+        "learning_rate": 2e-4,
+        "logging_steps": 5,
+        "save_strategy": "epoch",
+        "fp16": True,
+        "report_to": "none",
+        "optim": "paged_adamw_8bit",
+    }
+
+    config_cls = SFTConfig or TrainingArguments
+    supported_params = signature(config_cls).parameters
+
+    if SFTConfig and "max_length" in supported_params:
+        config_kwargs["max_length"] = 512
+    if SFTConfig and "dataset_text_field" in supported_params:
+        config_kwargs["dataset_text_field"] = "text"
+
+    filtered_kwargs = {
+        key: value for key, value in config_kwargs.items() if key in supported_params
+    }
+    return config_cls(**filtered_kwargs)
+
 
 print("=" * 60)
-print("SimpleSpeak GPT-2 LoRA Training Script")
+print("SimpleSpeak Qwen3 1.7B QLoRA Training")
 print("=" * 60)
 
-# Create necessary directories
-Path(ADAPTER_DIR).parent.mkdir(parents=True, exist_ok=True)
-Path(OUTPUT_DIR).parent.mkdir(parents=True, exist_ok=True)
+Path("adapters").mkdir(parents=True, exist_ok=True)
+Path("results").mkdir(parents=True, exist_ok=True)
+Path(TRAINING_OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
 
-# Check if training data exists
 if not Path(TRAIN_FILE).exists():
     raise FileNotFoundError(
         f"Training file not found: {TRAIN_FILE}\n"
-        "Please ensure data/train.jsonl exists with training examples."
+        "Please ensure data/train.jsonl exists."
     )
 
-print(f"[OK] Training data found: {TRAIN_FILE}")
+if not torch.cuda.is_available():
+    print("\nCUDA/GPU was not found.")
+    print("This QLoRA training script is intended to run in Google Colab with GPU enabled.")
+    print("In Colab, go to Runtime > Change runtime type > GPU.")
+    sys.exit(1)
 
-# Check for CUDA/GPU (optional for GPT-2)
-cuda_available = torch.cuda.is_available()
-if cuda_available:
-    print(f"[OK] CUDA available. Device: {torch.cuda.get_device_name(0)}")
-    print(f"  GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
-else:
-    print("[WARN] CUDA not available. Will use CPU (training will be slower).")
-
-# ============================================================
-# LOAD TOKENIZER
-# ============================================================
+print(f"[OK] CUDA available: {torch.cuda.get_device_name(0)}")
 
 print("\nLoading tokenizer...")
-tokenizer = AutoTokenizer.from_pretrained(
-    MODEL_NAME,
-    trust_remote_code=True,
-)
-
-# Ensure tokenizer has a pad token (GPT-2 doesn't have one by default)
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
-
-# Set padding side to "right"
 tokenizer.padding_side = "right"
 print("[OK] Tokenizer loaded")
 
-# ============================================================
-# LOAD MODEL WITH 4-BIT QUANTIZATION (if available)
-# ============================================================
-
-print("\nLoading base model...")
-model = None
-using_4bit = False
-
-# Try 4-bit quantization if CUDA is available. GPT-2 is small, so this is off
-# by default to keep training and evaluation behavior cleaner.
-if cuda_available and USE_4BIT:
-    try:
-        print("Attempting 4-bit quantization...")
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_use_double_quant=True,
-        )
-        
-        model = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME,
-            quantization_config=bnb_config,
-            device_map="auto",
-            torch_dtype=torch.float16,
-            trust_remote_code=True,
-        )
-        using_4bit = True
-        print("[OK] Model loaded in 4-bit")
-    except Exception as e:
-        print(f"[WARN] 4-bit loading failed: {e}")
-        print("Falling back to normal LoRA loading...")
-        model = None
-
-# Fall back to normal loading if 4-bit failed or no CUDA
-if model is None:
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME,
-        torch_dtype=torch.float32 if not cuda_available else torch.float16,
-        device_map="auto" if cuda_available else "cpu",
-        trust_remote_code=True,
-    )
-    print("[OK] Model loaded (normal LoRA)")
-
-# Disable cache for training
-model.config.use_cache = False
-model.config.pad_token_id = tokenizer.eos_token_id
-
-# ============================================================
-# PREPARE FOR KBIT TRAINING (if using 4-bit)
-# ============================================================
-
-if using_4bit:
-    print("\nPreparing model for k-bit training...")
-    model = prepare_model_for_kbit_training(model)
-    print("[OK] Model prepared for k-bit training")
-
-# ============================================================
-# ADD LORA ADAPTER
-# ============================================================
-
-print("\nSetting up LoRA adapter...")
-
-lora_config = LoraConfig(
-    r=16,
-    lora_alpha=32,
-    lora_dropout=0.0,
-    bias="none",
-    task_type="CAUSAL_LM",
-    target_modules=["c_attn", "c_proj", "c_fc"],
-    fan_in_fan_out=True,
+print("\nLoading base model in 4-bit...")
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.float16,
+    bnb_4bit_use_double_quant=True,
 )
 
+model = AutoModelForCausalLM.from_pretrained(
+    MODEL_NAME,
+    quantization_config=bnb_config,
+    device_map="auto",
+    trust_remote_code=True,
+)
+model.config.pad_token_id = tokenizer.eos_token_id
+model.config.use_cache = False
+print("[OK] Model loaded")
+
+print("\nPreparing model for k-bit training...")
+model = prepare_model_for_kbit_training(model)
+print("[OK] Model prepared")
+
+print("\nAdding LoRA adapter...")
+lora_config = LoraConfig(
+    r=8,
+    lora_alpha=16,
+    target_modules=[
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ],
+    lora_dropout=0.05,
+    bias="none",
+    task_type="CAUSAL_LM",
+)
 model = get_peft_model(model, lora_config)
-
-# Keep trainable adapter weights in FP32 (for 4-bit training stability)
-if using_4bit:
-    for param in model.parameters():
-        if param.requires_grad:
-            param.data = param.data.to(torch.float32)
-
-model.print_trainable_parameters()
+if hasattr(model, "print_trainable_parameters"):
+    model.print_trainable_parameters()
 print("[OK] LoRA adapter added")
-
-# ============================================================
-# LOAD AND PREPROCESS DATASET
-# ============================================================
 
 print("\nLoading dataset...")
 dataset = load_dataset("json", data_files=TRAIN_FILE, split="train")
-
-# Validate dataset structure
 if "messages" not in dataset.column_names:
-    raise ValueError(
-        f"Dataset must contain 'messages' field.\n"
-        f"Found columns: {dataset.column_names}\n"
-        f"Expected format:\n"
-        f'{{"messages":[{{"role":"user","content":"..."}},{{"role":"assistant","content":"..."}}]}}'
-    )
+    raise ValueError("Dataset must contain a 'messages' field.")
 
-print(f"[OK] Dataset loaded: {len(dataset)} examples")
 
-# Convert messages to plain text (no chat template for GPT-2)
+def validate_messages(example):
+    if not example.get("messages"):
+        raise ValueError("Each training example must contain a non-empty 'messages' list.")
+    return example
+
+
 def format_training_example(example):
-    """Convert messages to plain text format for GPT-2."""
-    messages = example["messages"]
-    user_message = ""
-    assistant_message = ""
-    
-    for message in messages:
-        if message.get("role") == "user":
-            user_message = message.get("content", "")
-        elif message.get("role") == "assistant":
-            assistant_message = message.get("content", "")
-    
-    return {
-        "text": (
-            "Task: Explain the concept in simple language.\n"
-            f"Question: {user_message}\n"
-            f"Answer: {assistant_message}{tokenizer.eos_token}"
-        )
-    }
+    text = apply_qwen_chat_template(
+        tokenizer,
+        example["messages"],
+        add_generation_prompt=False,
+    )
+    return {"text": text}
 
+
+dataset = dataset.map(validate_messages)
 dataset = dataset.map(
     format_training_example,
     remove_columns=[col for col in dataset.column_names if col != "text"],
 )
-print("[OK] Dataset formatted as plain text")
-
-# ============================================================
-# TRAINING CONFIGURATION
-# ============================================================
+print(f"[OK] Dataset formatted: {len(dataset)} examples")
 
 print("\nConfiguring training...")
+training_args = build_training_args()
 
-training_config_kwargs = {
-    "output_dir": OUTPUT_DIR,
-    "num_train_epochs": 20,
-    "per_device_train_batch_size": 1,
-    "gradient_accumulation_steps": 1,
-    "learning_rate": 5e-4,
-    "lr_scheduler_type": "linear",
-    "optim": "paged_adamw_8bit" if using_4bit else "adamw_torch",
-    "logging_steps": 1,
-    "save_strategy": "epoch",
-    "max_grad_norm": 0.0,
-    "fp16": False,
-    "bf16": False,
-    "report_to": "none",
-    "seed": 42,
-}
-
-# TRL renamed max_seq_length to max_length in newer releases.
-sft_config_params = signature(SFTConfig).parameters
-if "dataset_text_field" in sft_config_params:
-    training_config_kwargs["dataset_text_field"] = "text"
-
-if "max_length" in sft_config_params:
-    training_config_kwargs["max_length"] = 512
-elif "max_seq_length" in sft_config_params:
-    training_config_kwargs["max_seq_length"] = 512
-else:
-    print("Warning: This TRL version does not expose max_length/max_seq_length.")
-
-training_config = SFTConfig(**training_config_kwargs)
-
-# Initialize trainer
 trainer_kwargs = {
     "model": model,
     "train_dataset": dataset,
-    "args": training_config,
+    "args": training_args,
 }
 
-# Newer TRL uses processing_class; older releases used tokenizer.
-sft_trainer_params = signature(SFTTrainer.__init__).parameters
-if "processing_class" in sft_trainer_params:
+trainer_params = signature(SFTTrainer.__init__).parameters
+if "processing_class" in trainer_params:
     trainer_kwargs["processing_class"] = tokenizer
-elif "tokenizer" in sft_trainer_params:
+elif "tokenizer" in trainer_params:
     trainer_kwargs["tokenizer"] = tokenizer
 
 trainer = SFTTrainer(**trainer_kwargs)
-
-print("✓ Training config ready")
-
-# ============================================================
-# TRAIN MODEL
-# ============================================================
+print("[OK] Training config ready")
 
 print("\nStarting training...")
-print("-" * 60)
-
 trainer.train()
 
-print("-" * 60)
-print("[OK] Training complete")
-
-# ============================================================
-# SAVE ADAPTER
-# ============================================================
-
 print("\nSaving adapter...")
-
-# Save only the LoRA adapter (not the base model)
 model.save_pretrained(ADAPTER_DIR)
-
-# Save tokenizer to adapter folder
 tokenizer.save_pretrained(ADAPTER_DIR)
 
-print(f"[OK] Adapter saved to: {ADAPTER_DIR}")
-print(f"[OK] Tokenizer saved to: {ADAPTER_DIR}")
-
-# ============================================================
-# FINAL MESSAGE
-# ============================================================
-
-print("\n" + "=" * 60)
-print("Training complete!")
-print("=" * 60)
-print(f"Adapter location: {ADAPTER_DIR}/")
-print("\nNext steps:")
-print(f"  1. Run: python src/compare.py")
-print(f"  2. Run: python src/chat.py")
-print("=" * 60 + "\n")
+print("\nTraining complete.")
+print(f"Adapter saved to: {ADAPTER_DIR}")

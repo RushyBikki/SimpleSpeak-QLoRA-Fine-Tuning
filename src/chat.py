@@ -1,180 +1,126 @@
 """
-Interactive chat interface for the fine-tuned GPT-2 LoRA adapter.
-
-Loads the LoRA adapter and provides a command-line interface to
-explain concepts in simple language for young students.
+Interactive chat interface for the SimpleSpeak Qwen3 LoRA adapter.
 """
 
-import os
-import torch
+import re
+import sys
 from pathlib import Path
 
-# Hugging Face imports
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+import torch
 from peft import PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-# ============================================================
-# CONFIGURATION
-# ============================================================
 
-MODEL_NAME = "openai-community/gpt2"
-ADAPTER_DIR = "adapters/gpt2-simple-speak"
-USE_4BIT = False
+MODEL_NAME = "Qwen/Qwen3-1.7B"
+ADAPTER_DIR = "adapters/qwen3-1.7b-simple-speak"
 
-# ============================================================
-# SETUP AND VALIDATION
-# ============================================================
+
+def apply_qwen_chat_template(tokenizer, messages, add_generation_prompt):
+    """Apply Qwen chat template, disabling thinking mode when supported."""
+    try:
+        return tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+            enable_thinking=False,
+        )
+    except TypeError:
+        return tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+        )
+
+
+def remove_thinking(text):
+    """Remove Qwen thinking blocks if the model emits them."""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+
+def generate_response(model, tokenizer, prompt):
+    messages = [{"role": "user", "content": prompt}]
+    formatted_prompt = apply_qwen_chat_template(
+        tokenizer,
+        messages,
+        add_generation_prompt=True,
+    )
+
+    inputs = tokenizer(formatted_prompt, return_tensors="pt")
+    inputs = {key: value.to(model.device) for key, value in inputs.items()}
+
+    with torch.no_grad():
+        output_ids = model.generate(
+            **inputs,
+            max_new_tokens=150,
+            temperature=0.6,
+            top_p=0.9,
+            do_sample=True,
+            pad_token_id=tokenizer.eos_token_id,
+        )
+
+    generated_ids = output_ids[0][inputs["input_ids"].shape[-1] :]
+    answer = tokenizer.decode(generated_ids, skip_special_tokens=True)
+    return remove_thinking(answer)
+
 
 print("=" * 60)
-print("SimpleSpeak GPT-2 LoRA Chat")
+print("SimpleSpeak Qwen3 1.7B LoRA Chat")
 print("=" * 60)
 
-# Check if adapter exists
 if not Path(ADAPTER_DIR).exists():
-    print("\n" + "!" * 60)
-    print("ERROR: Adapter not found.")
-    print("=" * 60)
-    print(f"Adapter folder not found: {ADAPTER_DIR}")
-    print("Please run: python src/train.py")
-    print("=" * 60 + "\n")
-    exit(1)
-
-print(f"[OK] Adapter found: {ADAPTER_DIR}\n")
-
-# Check for CUDA
-cuda_available = torch.cuda.is_available()
-if cuda_available:
-    print(f"[OK] CUDA available. Device: {torch.cuda.get_device_name(0)}")
-else:
-    print("[WARN] CUDA not available. Using CPU (inference will be slower).")
-
-# ============================================================
-# LOAD TOKENIZER
-# ============================================================
+    print("Adapter not found. Please run python src/train.py first.")
+    sys.exit(1)
 
 print("\nLoading tokenizer...")
-tokenizer = AutoTokenizer.from_pretrained(
-    MODEL_NAME,
-    trust_remote_code=True,
-)
-
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
-
 tokenizer.padding_side = "right"
 print("[OK] Tokenizer loaded")
 
-# ============================================================
-# FORMAT FUNCTION FOR GPT-2
-# ============================================================
-
-def format_prompt(user_text):
-    """Format prompt for GPT-2 (no chat template)."""
-    return (
-        "Task: Explain the concept in simple language.\n"
-        f"Question: {user_text}\n"
-        "Answer:"
+print("\nLoading model...")
+if torch.cuda.is_available():
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_use_double_quant=True,
     )
-
-# ============================================================
-# LOAD BASE MODEL AND ADAPTER
-# ============================================================
-
-print("\nLoading model and adapter...")
-
-if cuda_available and USE_4BIT:
-    # Try 4-bit quantization for GPU
-    try:
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_use_double_quant=True,
-        )
-        base_model = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME,
-            quantization_config=bnb_config,
-            device_map="auto",
-            trust_remote_code=True,
-        )
-    except Exception as e:
-        print(f"[WARN] 4-bit loading failed, using normal loading: {e}")
-        base_model = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME,
-            torch_dtype=torch.float16,
-            device_map="auto",
-            trust_remote_code=True,
-        )
-else:
-    print("[OK] Loading GPT-2 without quantization...")
     base_model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
-        torch_dtype=torch.float16 if cuda_available else torch.float32,
-        device_map="auto" if cuda_available else "cpu",
+        quantization_config=bnb_config,
+        device_map="auto",
         trust_remote_code=True,
     )
+else:
+    base_model = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME,
+        torch_dtype=torch.float32,
+        device_map="cpu",
+        trust_remote_code=True,
+    )
+
 base_model.config.pad_token_id = tokenizer.eos_token_id
-
-# Load the LoRA adapter
+base_model.config.use_cache = False
 model = PeftModel.from_pretrained(base_model, ADAPTER_DIR)
-model.eval()  # Set to evaluation mode
-
+model.eval()
 print("[OK] Model and adapter loaded")
 
-# ============================================================
-# CHAT LOOP
-# ============================================================
-
-print("\n" + "=" * 60)
-print("Ready for chat!")
-print("=" * 60)
-print("Type a question or concept to explain.")
-print("Type 'quit', 'exit', or 'q' to stop.\n")
+print("\nSimpleSpeak Qwen3 1.7B LoRA Chat")
+print("Type a Computer Science concept or question.")
+print("Type 'quit', 'exit', or 'q' to stop.")
 
 while True:
-    # Get user input
-    user_input = input("Enter your question:\n> ").strip()
-    
-    # Check for exit commands
-    if user_input.lower() in ["quit", "exit", "q"]:
-        print("\nGoodbye!\n")
-        break
-    
-    # Skip empty input
-    if not user_input:
-        print("Please enter a question.\n")
-        continue
-    
-    # Format prompt for GPT-2
-    prompt = format_prompt(user_input)
-    
-    # Tokenize
-    inputs = tokenizer(prompt, return_tensors="pt")
-    input_ids = inputs["input_ids"].to(model.device)
-    attention_mask = inputs.get("attention_mask", None)
-    if attention_mask is not None:
-        attention_mask = attention_mask.to(model.device)
-    
-    # Generate output
-    print("\nAnswer:")
-    with torch.no_grad():
-        output_ids = model.generate(
-            input_ids,
-            attention_mask=attention_mask,
-            max_new_tokens=90,
-            do_sample=False,
-            repetition_penalty=1.15,
-            no_repeat_ngram_size=3,
-            eos_token_id=tokenizer.eos_token_id,
-            pad_token_id=tokenizer.eos_token_id,
-        )
-    
-    # Decode only the newly generated tokens (skip the input prompt)
-    generated_ids = output_ids[0][input_ids.shape[-1]:]
-    answer_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
-    answer_text = answer_text.split("\nQuestion:", 1)[0]
-    answer_text = answer_text.split("\nAnswer:", 1)[0]
-    
-    print(f"{answer_text.strip()}\n")
+    user_input = input("\nEnter your question:\n> ").strip()
 
-print("=" * 60 + "\n")
+    if user_input.lower() in {"quit", "exit", "q"}:
+        print("\nGoodbye.")
+        break
+
+    if not user_input:
+        print("Please enter a question.")
+        continue
+
+    answer = generate_response(model, tokenizer, user_input)
+    print("\nAnswer:")
+    print(answer)
