@@ -13,6 +13,11 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 MODEL_NAME = "Qwen/Qwen3-1.7B"
 ADAPTER_DIR = "adapters/qwen3-1.7b-simple-speak"
+STYLE_INSTRUCTION = (
+    "Please explain this for a middle school student. "
+    "Use simple words, short sentences, and helpful analogies. "
+    "Give a complete but simple explanation, and explain any technical terms."
+)
 
 
 def apply_qwen_chat_template(tokenizer, messages, add_generation_prompt):
@@ -38,7 +43,8 @@ def remove_thinking(text):
 
 
 def generate_response(model, tokenizer, prompt):
-    messages = [{"role": "user", "content": prompt}]
+    user_content = f"{prompt}\n\n{STYLE_INSTRUCTION}"
+    messages = [{"role": "user", "content": user_content}]
     formatted_prompt = apply_qwen_chat_template(
         tokenizer,
         messages,
@@ -51,10 +57,11 @@ def generate_response(model, tokenizer, prompt):
     with torch.no_grad():
         output_ids = model.generate(
             **inputs,
-            max_new_tokens=150,
+            max_new_tokens=300,
             temperature=0.6,
             top_p=0.9,
             do_sample=True,
+            eos_token_id=tokenizer.eos_token_id,
             pad_token_id=tokenizer.eos_token_id,
         )
 
